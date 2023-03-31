@@ -33,11 +33,15 @@ app.use(sessionParser);
 app.use(bodyParser.urlencoded());
 app.use(bodyParser.json());
 
-app.get('/session', function (req, res) {
-    initializeSession(req);
+app.get('/name', function (req, res) {
+    //initializeSession(req);
     //console.log(req.session);
-    const name = userIdToName.get(req.session.userId);
-    res.send({ name: name, userId: req.session.userId });
+    if (req.session.userId) {
+        const name = userIdToName.get(req.session.userId);
+        res.send({ name: name, userId: req.session.userId });
+    } else {
+        res.send({});
+    }
 });
 
 function initializeSession(req) {
@@ -53,6 +57,11 @@ function initializeSession(req) {
 }
 
 app.post('/name', function (req, res) {
+    const name = req.body.name;
+    if (!name || name.length < 3 || name.length > 14) {
+        res.send({ result: 'ERR', message: 'Bad name'});
+        return;
+    }
 
     initializeSession(req);
     const prevName = userIdToName.get(req.session.userId);
@@ -63,12 +72,10 @@ app.post('/name', function (req, res) {
 });
 
 app.delete('/logout', function (request, response) {
-    const ws = map.get(request.session.userId);
+    userIdToName.delete(request.session.userId);
 
     console.log('Destroying session');
     request.session.destroy(function () {
-        if (ws) ws.close();
-
         response.send({ result: 'OK', message: 'Session destroyed' });
     });
 });
@@ -107,6 +114,7 @@ server.on('upgrade', function (request, socket, head) {
 
 wss.on('connection', function (ws, request) {
     const userId = request.session.userId;
+    const name = userIdToName.get(userId);
 
     ws.on('error', console.error);
 
@@ -114,23 +122,13 @@ wss.on('connection', function (ws, request) {
         try {
             const obj = JSON.parse(message);
 
-            if (obj.action = 'btn') {
-                const name = userIdToName.get(userId);
+            if (obj.action === 'btn') {
                 console.log(`Received button press ${obj.button} from ${userId} / ${name}`);
 
-                if (trbotSocket != null) {
-                    trbotSocket.send(JSON.stringify({
-                        "user": {
-                            "ExternalID": userId,
-                            "Username": name || userId
-                        },
-                        "message": {
-                            "Text": obj.button
-                        }
-                    }));
-                }
-
-                broadcast({action: 'btn', button: obj.button, name: name});
+                sendTrBot(userId, name, obj.button);
+            } else if (obj.action === 'msg') {
+                console.log(`Received message ${obj.message} from ${userId} / ${name}`);
+                sendTrBot(userId, name, obj.message);
             }
         } catch (e) {
             console.error(`${userId} sent bad message ${message}`, e);
@@ -139,9 +137,28 @@ wss.on('connection', function (ws, request) {
     });
 
     ws.on('close', function () {
-        map.delete(userId);
+        userIdToName.delete(userId);
+        broadcast({action: 'leave', name: name});
     });
+
+    broadcast({action: 'join', name: name});
 });
+
+function sendTrBot(userId, name, message) {
+    if (trbotSocket != null) {
+        trbotSocket.send(JSON.stringify({
+            "user": {
+                "ExternalID": userId,
+                "Username": name || userId
+            },
+            "message": {
+                "Text": message
+            }
+        }));
+    }
+
+    broadcast({action: 'message', message: message, name: name});
+}
 
 function broadcast(message) {
     const response = JSON.stringify(message);
