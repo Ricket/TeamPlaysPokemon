@@ -117,12 +117,20 @@ wss.on('connection', function (ws, request) {
             if (obj.action = 'btn') {
                 const name = userIdToName.get(userId);
                 console.log(`Received button press ${obj.button} from ${userId} / ${name}`);
-                const response = JSON.stringify({action: 'btn', button: obj.button, name: name});
-                wss.clients.forEach((client) => {
-                    if (client.readyState === WebSocket.OPEN) {
-                        client.send(response);
-                    }
-                });
+
+                if (trbotSocket != null) {
+                    trbotSocket.send(JSON.stringify({
+                        "user": {
+                            "ExternalID": userId,
+                            "Username": name || userId
+                        },
+                        "message": {
+                            "Text": obj.button
+                        }
+                    }));
+                }
+
+                broadcast({action: 'btn', button: obj.button, name: name});
             }
         } catch (e) {
             console.error(`${userId} sent bad message ${message}`, e);
@@ -135,9 +143,32 @@ wss.on('connection', function (ws, request) {
     });
 });
 
+function broadcast(message) {
+    const response = JSON.stringify(message);
+                wss.clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(response);
+                    }
+                });
+}
+
+const trbot = new WebSocketServer({ clientTracking: false, port: 15333 });
+let trbotSocket = null;
+trbot.on('connection', function (ws, request) {
+    trbotSocket = ws;
+    ws.on('error', console.error);
+    ws.on('message', (message) => {
+        const msg = message.toString('utf8');
+        console.log('[trbot] ' + msg);
+        broadcast({action: 'trbot', message: msg});
+    });
+    ws.on('close', () => console.log('trbot closed'));
+});
+
 //
 // Start the server.
 //
 server.listen(8080, function () {
     console.log('Listening on http://localhost:8080');
 });
+

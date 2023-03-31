@@ -96,6 +96,8 @@
                 if (data.action === 'btn') {
                     const name = data.name || 'Anonymous';
                     showMessage(`${name} pressed ${data.button}`);
+                } else if (data.action === 'trbot') {
+                    showMessage(data.message);
                 }
             } catch (e) {
                 console.error('Caught exception onmessage', e);
